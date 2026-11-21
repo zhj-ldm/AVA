@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="AVA — All Voice AI Agent">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050914"/>
+      <stop offset="0.55" stop-color="#0b1a2b"/>
+      <stop offset="1" stop-color="#122a3d"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#41e1bd"/>
+      <stop offset="1" stop-color="#4aa8ff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.18" cy="0.25" r="0.7">
+      <stop offset="0" stop-color="#2f8dff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#2f8dff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="360" fill="url(#bg)"/>
+  <rect width="1200" height="360" fill="url(#glow)"/>
+  <g stroke="#1d3a55" stroke-width="1" opacity="0.55">
+    <path d="M0 300 H1200 M0 320 H1200 M0 340 H1200"/>
+    <path d="M0 60 H1200" opacity="0.3"/>
+  </g>
+  <g transform="translate(80,0)">
+    <text x="0" y="152" fill="#eaf6ff" font-family="-apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="104" font-weight="700" letter-spacing="10">AVA</text>
+    <text x="4" y="200" fill="url(#accent)" font-family="-apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="27" letter-spacing="5">ALL VOICE AI AGENT</text>
+    <text x="4" y="246" fill="#8fb3cc" font-family="-apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif" font-size="19" letter-spacing="1">本地语音入口 · 云端大脑 · macOS 菜单栏常驻</text>
+  </g>
+  <g transform="translate(1000,90)" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.85">
+    <circle cx="0" cy="60" r="34"/>
+    <circle cx="0" cy="60" r="56" opacity="0.45"/>
+    <circle cx="0" cy="60" r="78" opacity="0.2"/>
+  </g>
+</svg>

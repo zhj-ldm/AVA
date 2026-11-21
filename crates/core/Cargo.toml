@@ -1,0 +1,37 @@
+[package]
+name = "ava-core"
+version = "0.1.0"
+edition = "2021"
+description = "AVA assistant core backend (dual agent + skills + memory + scheduler + HTTP API)"
+
+[[bin]]
+name = "ava-core"
+path = "src/main.rs"
+
+[dependencies]
+# 后端 Agent 运行时：开源 Rust 版 Pi（rpi）。锁定具体提交保证 API 一致。
+rpi-agent = { git = "https://github.com/bigfish1913/pi-rust", rev = "534fec953e3545de9a5845e7de4bb3ae71f53653" }
+rpi-ai = { git = "https://github.com/bigfish1913/pi-rust", rev = "534fec953e3545de9a5845e7de4bb3ae71f53653", features = ["providers"] }
+rpi-tools = { git = "https://github.com/bigfish1913/pi-rust", rev = "534fec953e3545de9a5845e7de4bb3ae71f53653" }
+# 与 rpi 的 rustls 依赖保持同一实现，启动时安装 ring provider（避免 CryptoProvider 冲突 panic）
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+axum = { version = "0.7", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "stream", "cookies", "http2"] }
+scraper = "0.20"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+cron = "0.12"
+uuid = { version = "1", features = ["v4", "serde"] }
+futures = "0.3"
+async-stream = "0.3"
+libc = "0.2"
+url = "2"
+# 内嵌聚合搜索（含本地 EmbeddingGemma 向量重排），源码随仓库 vendored
+aggrsearch = { path = "../aggrsearch" }

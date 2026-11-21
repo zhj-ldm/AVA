@@ -1,0 +1,74 @@
+{
+  "name": "ava-assistant-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AVA语音助手 UI（Electron）",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --mac --arm64 --publish never"
+  },
+  "build": {
+    "appId": "com.ava.assistant",
+    "productName": "AVA",
+    "asar": true,
+    "files": [
+      "electron/**",
+      "src/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../resources",
+        "to": "resources",
+        "filter": [
+          "**/*",
+          "!kokoro/**"
+        ]
+      },
+      {
+        "from": "../Skills",
+        "to": "Skills"
+      },
+      {
+        "from": "../target/release/ava-core",
+        "to": "bin/ava-core"
+      },
+      {
+        "from": "../target/release/voice-serve",
+        "to": "bin/voice-serve"
+      },
+      {
+        "from": "../resources/kokoro",
+        "to": "kokoro"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "electronDist": "node_modules/electron/dist"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}

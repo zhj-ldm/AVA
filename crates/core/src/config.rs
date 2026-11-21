@@ -1,0 +1,600 @@
+//! 全局配置：双 Agent API、语音阈值、skills、TTS 后端等。
+//! 持久化到 data/config.json，UI 可读写。
+
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+pub const DEFAULT_CORE_PORT: u16 = 8410;
+pub const DEFAULT_VOICE_PORT: u16 = 8420;
+
+/// 唯一受支持的 TTS 后端：内置 edge-tts-rust（经 voice-serve 的 /speak 播放）
+pub const TTS_BACKEND_INTERNAL: &str = "internal";
+
+/// serde 默认值：中途询问开关默认开启
+pub fn default_true() -> bool {
+    true
+}
+
+/// serde 默认值：输出语言默认中文（保持既有行为）
+pub fn default_output_language() -> String {
+    "zh".into()
+}
+
+/// serde 默认值：英文输出时的默认音色
+pub fn default_voice_en() -> String {
+    "en-US-AriaNeural".into()
+}
+
+/// serde 默认值：工具加载方式默认渐进式（Pi 风格按需加载）
+pub fn default_tool_loading() -> String {
+    "progressive".into()
+}
+
+/// serde 默认值：没人开口时最多等 4 秒就结束本轮录音、回到监听状态
+pub fn default_no_speech_timeout() -> f64 {
+    4.0
+}
+
+/// serde 默认值：历史字段 TTS 后端
+pub fn default_tts_backend_value() -> String {
+    TTS_BACKEND_INTERNAL.into()
+}
+
+/// serde 默认值：TTS 提供方（默认在线 edge）
+pub fn default_tts_provider() -> String {
+    "edge".into()
+}
+
+/// serde 默认值：本地 Kokoro 音色
+pub fn default_local_voice() -> String {
+    "zf_001".into()
+}
+
+/// serde 默认值：本地 Kokoro 语速
+pub fn default_local_speed() -> f32 {
+    1.0
+}
+
+/// serde 默认值：直接原文投喂的最近消息条数
+pub fn default_context_recent() -> u32 {
+    10
+}
+
+/// serde 默认值：投喂窗口外、被压缩成摘要的消息条数
+pub fn default_context_compress() -> u32 {
+    30
+}
+
+/// 单条 API 上游配置（多 API key / 多 base_url 分摊 RPM 压力）。
+/// 每个上游持有独立 RPM 限流器，各自遵守自己的每分钟配额。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderEntry {
+    /// 显示名（如 "本地 Ollama" / "远端 API"）
+    #[serde(default)]
+    pub name: String,
+    /// 上游地址（本地如 http://127.0.0.1:11434，**不要带 /v1**，SDK 会按协议自动拼接）
+    pub base_url: String,
+    /// API Key（本地 Ollama 可为空）
+    #[serde(default)]
+    pub api_key: String,
+    /// 模型名。每套模型配置独立使用自己的模型名（不同 URL / 不同模型可并存），
+    /// 切换当前模型 = 切换 active_model 指向的配置。
+    pub model: String,
+    /// 该上游独立的每分钟请求数上限；缺省时用全局 rpm_limit
+    #[serde(default)]
+    pub rpm_limit: Option<u32>,
+    /// 同服务商同模型的多个 API Key：每个 Key 展开为一个独立轮询通道（同 URL、同模型）
+    #[serde(default)]
+    pub api_keys: Vec<String>,
+}
+
+impl Default for ProviderEntry {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+            rpm_limit: None,
+            api_keys: Vec::new(),
+        }
+    }
+}
+
+/// 纠正常见的 Base URL 误填：
+/// - 去掉误加的 `/chat`、`/chat/v1`、`/v1/chat/completions` 等请求路径（SDK 会自行拼接完整路径）；
+/// - DeepSeek 统一为站点根 `https://api.deepseek.com`。
+fn normalize_base_url(raw: &str) -> String {
+    let mut s = raw.trim().trim_end_matches('/').to_string();
+    for suffix in ["/v1/chat/completions", "/chat/completions", "/chat/v1", "/chat"] {
+        if let Some(stripped) = s.strip_suffix(suffix) {
+            s = stripped.to_string();
+            break;
+        }
+    }
+    if s.contains("api.deepseek.com") {
+        return "https://api.deepseek.com".into();
+    }
+    s
+}
+
+/// 纠正不存在的模型名（目前仅处理 DeepSeek 的常见误填）。
+fn normalize_provider_model(model: &str, base_url: &str) -> String {
+    let m = model.trim();
+    if base_url.contains("deepseek.com") {
+        return match m {
+            "deepseek" | "deepseek-v3" => "deepseek-chat".into(),
+            _ => m.to_string(),
+        };
+    }
+    m.to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Config {
+    /// 数据目录（对话/记忆/定时任务/skills 配置）
+    pub data_dir: PathBuf,
+
+    // ---- 主 Agent ----
+    pub main_base_url: String,
+    pub main_api_key: String,
+    pub main_model: String,
+    pub main_system_prompt: String,
+
+    // ---- 语音 ----
+    pub voice_port: u16,
+    /// 唤醒词
+    pub wakeword: String,
+    /// 唤醒提示音
+    pub beep_file: String,
+    /// TTS 音色
+    pub voice: String,
+    /// 语速（1.0 为正常）
+    pub rate: f32,
+    /// TTS 后端（历史字段，固定 internal，已从设置界面移除）
+    #[serde(default = "default_tts_backend_value")]
+    pub tts_backend: String,
+    /// 实际使用的 TTS 提供方: "edge"（在线微软）| "local"（Kokoro 本地）
+    #[serde(default = "default_tts_provider")]
+    pub tts_provider: String,
+    /// 本地 Kokoro 音色 id（zf_001 女声 / zm_010 男声 / af_maple 英文女声）
+    #[serde(default = "default_local_voice")]
+    pub local_voice: String,
+    /// 本地 Kokoro 语速（0.5 ~ 2.0，默认 1.0）
+    #[serde(default = "default_local_speed")]
+    pub local_speed: f32,
+    /// 历史字段：打断关键词固定由内置规则处理，已从设置界面移除
+    #[serde(default)]
+    pub interrupt_keywords: Vec<String>,
+    /// 录音最长秒数（用户说完自动截断）
+    pub max_record_secs: f64,
+    /// 普通语音指令的静默结束阈值（秒）：检测到人声后，静默超过该时长即判定「说完了」。
+    /// 默认 2.5，与 voice-serve 内置 VAD 常量一致。
+    pub silence_limit_secs: f64,
+    /// 连续对话模式：每句静默结束阈值（秒），默认 1.5（用户可调）
+    pub continuous_silence_secs: f64,
+    /// 没人说话时的等待上限（秒）：超过即结束本轮录音、回到监听状态。默认 4 秒。
+    #[serde(default = "default_no_speech_timeout")]
+    pub no_speech_timeout_secs: f64,
+    /// 连续对话模式：单轮最长录音秒数
+    pub continuous_max_record_secs: f64,
+    /// 连续对话模式：连续多少轮无人说话自动退出
+    pub continuous_idle_rounds: u32,
+    /// 唤醒词检测阈值（keywords_threshold，越低越灵敏）
+    pub kws_threshold: f32,
+    /// 语音交互开关
+    pub voice_enabled: bool,
+    /// 输出语言：zh | en | auto。
+    /// zh/en = 提示词强制 AI 以该语言输出正文与【Voice】播报；auto = 由 AI 跟随用户输入语言。
+    #[serde(default = "default_output_language")]
+    pub output_language: String,
+    /// 输出语言为 en 且当前 TTS 音色是中文音色时，自动改用该英文音色（避免中文音色念英文）
+    #[serde(default = "default_voice_en")]
+    pub voice_en: String,
+
+    // ---- Skills ----
+    /// skills 根目录列表（每个 skill 一个子文件夹）
+    pub skill_dirs: Vec<PathBuf>,
+
+    // ---- 会话 ----
+    /// 主 agent 最大轮数
+    pub max_turns: u32,
+    /// 每分钟 API 请求数上限（默认 20，超限客户端侧等待；上游拒绝时 SDK 自动重试）
+    pub rpm_limit: u32,
+    /// 旧字段：模型思考开关（保留用于兼容；新配置统一用 thinking_level）
+    pub enable_thinking: bool,
+    /// 思考强度：off | low | medium | high。
+    /// 本地模型：开启时使用完整模型（关闭时用 -nothink 变体）；
+    /// DeepSeek：关闭用 deepseek-chat，低/中/高用 deepseek-reasoner（DeepSeek 只有"思考/不思考"两档）。
+    #[serde(default)]
+    pub thinking_level: String,
+    /// 允许 AI 中途主动询问用户（语音问答）：AI 可调用 AskUserQuestion 播报问题并聆听语音回复。
+    #[serde(default = "default_true")]
+    pub ask_user_enabled: bool,
+    /// 工具加载方式：progressive（渐进式，默认：常驻常用工具，其余经 ToolGuide 按需启用）
+    /// 或 eager（默认全部加载，所有工具一开始就对模型可见）。
+    #[serde(default = "default_tool_loading")]
+    pub tool_loading: String,
+    /// 上下文投喂模式：开启后按「最近 N 条原文 + 再往前 M 条摘要」投喂，
+    /// 更早记录不再自动发送，由 AI 调用 RecallHistory 回溯。
+    #[serde(default)]
+    pub context_feeding_enabled: bool,
+    /// 直接原文投喂的最近消息条数（默认 10）
+    #[serde(default = "default_context_recent")]
+    pub context_recent_count: u32,
+    /// 最近 N 条之外、压缩为摘要投喂的消息条数（默认 30）
+    #[serde(default = "default_context_compress")]
+    pub context_compress_count: u32,
+    /// 渐进式加载时默认就加载（直接对模型可见）的工具名列表。
+    /// 用户在「设置 → 工具加载」里逐个开关控制；为空 = 全部按需加载。
+    #[serde(default)]
+    pub default_loaded_tools: Vec<String>,
+
+    // ---- 多 API 上游（单 Agent 轮询分摊 RPM）----
+    /// 多个上游（多 key/多 base_url/多模型）。非空时优先使用本列表构建 Agent，
+    /// 请求按 round-robin 轮询分摊到各上游，每个上游独立遵守自己的 RPM 限速。
+    #[serde(default)]
+    pub providers: Vec<ProviderEntry>,
+    /// 当前使用的模型配置名（providers 中 name 匹配；空/找不到时回退第一个）
+    #[serde(default)]
+    pub active_model: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let root = crate::paths::project_root();
+        Self {
+            data_dir: root.join("data"),
+            main_base_url: "https://api.openai.com/v1".into(),
+            main_api_key: String::new(),
+            main_model: "gpt-4o".into(),
+            // 只写"人设/身份与语气"：语言、风格、播报格式等统一由 system.md 与
+            // compose_system_prompt 负责，避免两处重复规定造成规则叠加。
+            main_system_prompt:
+                "你是终端进取号的舰载电脑，代号 Computer，用户平时就喊你 computer。\
+语气冷静、专业，像精炼的终端通讯。"
+                    .into(),
+            voice_port: DEFAULT_VOICE_PORT,
+            wakeword: "computer".into(),
+            beep_file: crate::paths::resource("wake_sound.wav")
+                .to_string_lossy()
+                .into_owned(),
+            voice: "zh-CN-XiaoxiaoNeural".into(),
+            rate: 1.05,
+            tts_backend: TTS_BACKEND_INTERNAL.into(),
+            tts_provider: default_tts_provider(),
+            local_voice: default_local_voice(),
+            local_speed: default_local_speed(),
+            interrupt_keywords: vec![
+                "stop".into(),
+                "停止".into(),
+                "停".into(),
+                "够了".into(),
+                "取消".into(),
+            ],
+            max_record_secs: 120.0,
+            silence_limit_secs: 1.5,
+            continuous_silence_secs: 1.5,
+            no_speech_timeout_secs: default_no_speech_timeout(),
+            continuous_max_record_secs: 12.0,
+            continuous_idle_rounds: 3,
+            kws_threshold: 0.25,
+            voice_enabled: true,
+            output_language: default_output_language(),
+            voice_en: default_voice_en(),
+            skill_dirs: Vec::new(),
+            max_turns: 1000,
+            rpm_limit: 20,
+            enable_thinking: false,
+            thinking_level: "off".into(),
+            ask_user_enabled: true,
+            tool_loading: default_tool_loading(),
+            context_feeding_enabled: false,
+            context_recent_count: default_context_recent(),
+            context_compress_count: default_context_compress(),
+            default_loaded_tools: Vec::new(),
+            providers: Vec::new(),
+            active_model: String::new(),
+        }
+    }
+}
+
+impl Config {
+    pub fn voice_base(&self) -> String {
+        // voice-serve 固定绑定 127.0.0.1（本地回环），无需可配置 host
+        format!("http://127.0.0.1:{}", self.voice_port)
+    }
+
+    /// 生效 TTS 音色：输出语言为 en 且当前音色是中文音色时，改用 voice_en，避免中文音色念英文。
+    pub fn effective_voice(&self) -> String {
+        let v = self.voice.trim();
+        let zh_voice = v.starts_with("zh-") || v.contains("-CN-");
+        if self.output_language == "en" && zh_voice && !self.voice_en.trim().is_empty() {
+            self.voice_en.trim().to_string()
+        } else {
+            v.to_string()
+        }
+    }
+
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
+                tracing::warn!("解析 config.json 失败，使用默认配置: {e}");
+                Config::default()
+            }),
+            Err(_) => Config::default(),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        let s = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, s)?;
+        Ok(())
+    }
+
+    /// 旧项目根前缀（历史版本硬编码 /Users/zhj/Projects/ava-assistant）
+    fn old_project_root() -> PathBuf {
+        PathBuf::from(
+            std::env::var("HOME")
+                .unwrap_or_default()
+                .trim_end_matches('/'),
+        )
+        .join("Projects/ava-assistant")
+    }
+
+    /// 归一化历史遗留的枚举值。旧版本支持过外部 TTS 二进制后端（"goose-tts"），
+    /// 该链路（外部进程 spawn + 可执行文件路径配置）已整体移除，
+    /// 任何非 "internal" 的值一律收敛为内置 edge-tts-rust。
+    /// 返回是否有变更，调用方据此回写 config.json。
+    pub fn migrate_legacy_values(&mut self) -> bool {
+        let mut changed = false;
+        if !self.tts_backend.is_empty() && self.tts_backend != TTS_BACKEND_INTERNAL {
+            tracing::info!(
+                "迁移旧 TTS 后端 {:?} -> {:?}（外部 TTS 链路已移除）",
+                self.tts_backend,
+                TTS_BACKEND_INTERNAL
+            );
+            self.tts_backend = TTS_BACKEND_INTERNAL.into();
+            changed = true;
+        }
+        // 输出语言：只接受 zh/en/auto，其余（含历史值）收敛为 zh
+        if !matches!(self.output_language.as_str(), "zh" | "en" | "auto") {
+            tracing::info!("迁移非法输出语言 {:?} -> zh", self.output_language);
+            self.output_language = default_output_language();
+            changed = true;
+        }
+        if self.voice_en.trim().is_empty() {
+            self.voice_en = default_voice_en();
+            changed = true;
+        }
+        // 音色为空时回落到可用音色，否则 edge-tts 合成必然失败
+        if self.voice.trim().is_empty() {
+            self.voice = "zh-CN-XiaoxiaoNeural".into();
+            tracing::info!("音色为空，回落为 {}", self.voice);
+            changed = true;
+        }
+        // 思考强度：旧配置只有 enable_thinking 布尔值，迁移成四档
+        if self.thinking_level.trim().is_empty() {
+            self.thinking_level = if self.enable_thinking { "high".into() } else { "off".into() };
+            changed = true;
+        }
+        if !matches!(self.thinking_level.as_str(), "off" | "low" | "medium" | "high") {
+            tracing::info!("迁移非法思考强度 {:?} -> off", self.thinking_level);
+            self.thinking_level = "off".into();
+            changed = true;
+        }
+        self.enable_thinking = self.thinking_level != "off";
+
+        // 清理历史遗留的 OpenCode 后端条目（后端已彻底移除，base_url 为 opencode 的无效）
+        let before = self.providers.len();
+        self.providers.retain(|p| {
+            let b = p.base_url.trim().to_ascii_lowercase();
+            b != "opencode" && !b.starts_with("opencode:") && !b.starts_with("opencode://")
+        });
+        if self.providers.len() != before {
+            tracing::info!("迁移：移除 {} 个残留 OpenCode provider 条目", before - self.providers.len());
+            changed = true;
+        }
+
+        // 常见上游地址/模型写法纠错（尤其 DeepSeek：Base URL 误填 /chat/v1、
+        // 模型误填不存在的 deepseek-flash，会导致 404/400 直接不可用）
+        for p in self.providers.iter_mut() {
+            let base = normalize_base_url(&p.base_url);
+            if base != p.base_url {
+                tracing::info!("纠正 Base URL {:?} -> {:?}", p.base_url, base);
+                p.base_url = base;
+                changed = true;
+            }
+            let model = normalize_provider_model(&p.model, &p.base_url);
+            if model != p.model {
+                tracing::info!("纠正模型名 {:?} -> {:?}", p.model, model);
+                p.model = model;
+                changed = true;
+            }
+        }
+        let base = normalize_base_url(&self.main_base_url);
+        if base != self.main_base_url {
+            self.main_base_url = base;
+            changed = true;
+        }
+        let model = normalize_provider_model(&self.main_model, &self.main_base_url);
+        if model != self.main_model {
+            self.main_model = model;
+            changed = true;
+        }
+        changed
+    }
+
+    /// 把历史配置中指向旧绝对位置（旧项目根前缀，或换机后已不存在的绝对路径）
+    /// 的路径字段迁移为「相对项目根」的可移植形式（存储层相对、运行层解析）。
+    /// 返回是否有变更，调用方决定是否回写 config.json。
+    pub fn migrate_absolute_paths(&mut self) -> bool {
+        let mut changed = false;
+        let old_root = Self::old_project_root();
+
+        // beep_file：旧前缀或不存在 -> resources/<文件名>
+        if is_old_abs(&self.beep_file, &old_root) {
+            if let Some(name) = Path::new(&self.beep_file).file_name() {
+                self.beep_file = format!("resources/{}", name.to_string_lossy());
+                changed = true;
+            }
+        }
+        // data_dir：旧前缀 + /data -> data
+        let old_data = old_root.join("data");
+        if self.data_dir == old_data || self.data_dir.starts_with(&old_data) {
+            self.data_dir = PathBuf::from("data");
+            changed = true;
+        }
+        // skill_dirs：移除位于旧项目根内的条目（换机后必然失效，且非用户自定义外部目录）
+        let before = self.skill_dirs.len();
+        self.skill_dirs.retain(|d| !d.starts_with(&old_root));
+        if self.skill_dirs.len() != before {
+            changed = true;
+        }
+
+        changed
+    }
+
+    /// 将存储层相对路径解析为运行时绝对路径（相对基于项目根），
+    /// 供加载 config.json 后调用；后续所有消费方拿到的都是可用绝对路径。
+    pub fn resolve_paths(&mut self) {
+        let root = crate::paths::project_root();
+        if !Path::new(&self.beep_file).is_absolute() {
+            self.beep_file = root.join(&self.beep_file).to_string_lossy().into_owned();
+        }
+        if !self.data_dir.is_absolute() {
+            self.data_dir = root.join(&self.data_dir);
+        }
+        for d in self.skill_dirs.iter_mut() {
+            if !d.is_absolute() {
+                *d = root.join(&d);
+            }
+        }
+    }
+}
+
+/// 判断存储路径是否为「旧绝对路径」：以旧项目根前缀开头，或绝对且当前不存在。
+fn is_old_abs(p: &str, old_root: &Path) -> bool {
+    let path = Path::new(p);
+    if !path.is_absolute() {
+        return false;
+    }
+    if path.starts_with(old_root) {
+        return true;
+    }
+    !path.exists()
+}
+
+/// 磁盘上的 config.json 是否仍带已废弃的键。
+/// 这些键对应的功能（外部 TTS 可执行文件路径等）已从配置结构中删除，
+/// serde 会静默忽略它们，但只有回写一次整个文件，它们才会真正从磁盘消失。
+pub fn has_legacy_keys(path: &Path) -> bool {
+    const LEGACY_KEYS: [&str; 1] = ["goose_tts_path"];
+    let Ok(s) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else {
+        return false;
+    };
+    let Some(obj) = v.as_object() else {
+        return false;
+    };
+    LEGACY_KEYS.iter().any(|k| obj.contains_key(*k))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_tts_backend_migrates_to_internal() {
+        let mut c = Config::default();
+        c.tts_backend = "goose-tts".into();
+        assert!(c.migrate_legacy_values());
+        assert_eq!(c.tts_backend, TTS_BACKEND_INTERNAL);
+    }
+
+    #[test]
+    fn internal_backend_is_left_untouched() {
+        let mut c = Config::default();
+        assert_eq!(c.tts_backend, TTS_BACKEND_INTERNAL);
+        assert!(!c.migrate_legacy_values());
+        assert_eq!(c.tts_backend, TTS_BACKEND_INTERNAL);
+    }
+
+    #[test]
+    fn migration_is_idempotent() {
+        let mut c = Config::default();
+        c.tts_backend = "goose-tts".into();
+        assert!(c.migrate_legacy_values());
+        assert!(!c.migrate_legacy_values());
+    }
+
+    #[test]
+    fn default_config_is_internal() {
+        assert_eq!(Config::default().tts_backend, TTS_BACKEND_INTERNAL);
+    }
+
+    #[test]
+    fn empty_backend_fills_internal() {
+        let mut c = Config::default();
+        c.tts_backend = String::new();
+        assert!(!c.migrate_legacy_values());
+        assert_eq!(c.tts_backend, "");
+    }
+
+    #[test]
+    fn has_legacy_keys_detects_removed_field() {
+        let p = std::env::temp_dir().join("st_config_legacy_keys_test.json");
+        std::fs::write(
+            &p,
+            r#"{"tts_backend":"goose-tts","goose_tts_path":"resources/goose-tts"}"#,
+        )
+        .unwrap();
+        assert!(has_legacy_keys(&p));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn has_legacy_keys_false_for_clean_config() {
+        let p = std::env::temp_dir().join("st_config_clean_keys_test.json");
+        std::fs::write(&p, r#"{"tts_backend":"internal"}"#).unwrap();
+        assert!(!has_legacy_keys(&p));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn has_legacy_keys_false_for_missing_or_broken_file() {
+        assert!(!has_legacy_keys(Path::new("/nonexistent/st_config.json")));
+        let p = std::env::temp_dir().join("st_config_broken_keys_test.json");
+        std::fs::write(&p, "not json").unwrap();
+        assert!(!has_legacy_keys(&p));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn save_round_trip_drops_legacy_field() {
+        let dir = std::env::temp_dir().join("st_config_roundtrip_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("config.json");
+        std::fs::write(
+            &p,
+            r#"{"tts_backend":"goose-tts","goose_tts_path":"resources/goose-tts"}"#,
+        )
+        .unwrap();
+
+        let mut c = Config::load(&p);
+        assert!(c.migrate_legacy_values());
+        c.save(&p).unwrap();
+
+        assert!(!has_legacy_keys(&p));
+        assert_eq!(Config::load(&p).tts_backend, TTS_BACKEND_INTERNAL);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

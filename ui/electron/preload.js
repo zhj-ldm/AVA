@@ -1,0 +1,17 @@
+// 预加载脚本：安全地向渲染进程暴露后端地址等只读信息。
+// 注意：Electron 渲染进程默认开启 sandbox，preload 只能 require('electron')，
+// 不能 require('fs')/child_process 等 Node API——此前这里用了 fs 写日志，
+// 导致脚本在 sandbox 下抛错、整段不执行、window.star 未注入（前端随之瘫痪）。
+// 即使本脚本执行失败，渲染进程也会回退到默认本地端口，UI 仍可用。
+'use strict';
+
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('star', {
+  coreUrl: `http://127.0.0.1:${process.env.CORE_PORT || '8410'}`,
+  voiceUrl: `http://127.0.0.1:${process.env.VOICE_PORT || '8420'}`,
+  // 原生「选择文件夹」对话框（导入 Skill 用）；非 Electron 环境为 undefined，前端会回退手填。
+  pickSkillDir: () => ipcRenderer.invoke('pick-skill-dir'),
+  // 后端崩溃/自动重启通知（主进程 → 渲染层状态条）
+  onBackendDown: (fn) => ipcRenderer.on('backend-down', (_e, message) => fn(message)),
+});
