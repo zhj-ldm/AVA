@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AVA 提示音试听</title>
+<style>
+  :root{
+    --bg:#0a121d; --card:#111d2b; --line:#1e3348; --text:#e8f4ff;
+    --muted:#8fb3cc; --accent:#41e1bd; --accent2:#4aa8ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:40px 24px 64px;background:
+    radial-gradient(900px 500px at 10% -10%,rgba(47,141,255,.18),transparent 60%),
+    var(--bg);color:var(--text);
+    font-family:-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;}
+  header{max-width:1180px;margin:0 auto 28px}
+  h1{margin:0 0 8px;font-size:30px;letter-spacing:1px}
+  h1 span{color:var(--accent)}
+  p.lead{margin:0;color:var(--muted);font-size:14px;line-height:1.7}
+  code{background:#0e1c2a;border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:13px;color:var(--accent)}
+  .grid{max-width:1180px;margin:0 auto;display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+  .card{background:linear-gradient(160deg,#122233,#0d1824);border:1px solid var(--line);
+    border-radius:16px;padding:18px 18px 12px}
+  .card-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+  .card-head h2{margin:0;font-size:18px}
+  .card-head small{color:var(--muted);font-size:12px}
+  .row{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px dashed rgba(143,179,204,.14)}
+  .row:first-of-type{border-top:0}
+  .row label{width:96px;flex:none;color:var(--muted);font-size:13px}
+  audio{height:34px;width:100%}
+  footer{max-width:1180px;margin:28px auto 0;color:var(--muted);font-size:13px;line-height:1.8}
+  .tag{display:inline-block;font-size:11px;color:#0a121d;background:var(--accent);
+    border-radius:999px;padding:1px 8px;margin-left:8px;vertical-align:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>AVA <span>提示音试听</span></h1>
+  <p class="lead">
+    六套原创合成风格，每套包含唤醒、发送、任务完成等六个事件。挑好之后执行
+    <code>./set-sound-style.sh &lt;风格&gt;</code> 一键切换，然后重启 App 生效。
+  </p>
+</header>
+<main class="grid" id="grid"></main>
+<footer>
+  风格目录：crystal（水晶）、warm（温暖）、tech（科技）、minimal（极简）、glass（玻璃）、pulse（脉冲）。<br>
+  所有音效均由代码合成，不包含任何第三方采样。
+</footer>
+<script>
+const styles = [
+  ["crystal", "水晶", "清亮的钟琴音，默认"],
+  ["warm", "温暖", "柔和的马林巴，偏低频"],
+  ["tech", "科技", "短促的电子提示音"],
+  ["minimal", "极简", "最短、最克制的一声"],
+  ["glass", "玻璃", "带五度泛音的清透音色"],
+  ["pulse", "脉冲", "两段式数字脉冲"],
+];
+const events = [
+  ["wake_sound", "唤醒"],
+  ["complete", "发送"],
+  ["computer_beep_1", "按键"],
+  ["computerbeep_75", "监听结束"],
+  ["computerbeep_29", "多轮对话"],
+  ["subagent_done", "任务完成"],
+];
+const grid = document.getElementById('grid');
+for (const [id, name, desc] of styles) {
+  const card = document.createElement('section');
+  card.className = 'card';
+  card.innerHTML = `<div class="card-head"><h2>${name}${id === 'crystal' ? '<span class="tag">默认</span>' : ''}</h2><small>${desc}</small></div>`;
+  for (const [key, label] of events) {
+    const file = key === 'wake_sound' ? `${key}.wav` : `${key}.mp3`;
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<label>${label}</label><audio controls preload="none" src="${id}/${file}"></audio>`;
+    card.appendChild(row);
+  }
+  grid.appendChild(card);
+}
+</script>
+</body>
+</html>
