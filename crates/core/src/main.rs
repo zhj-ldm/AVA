@@ -2,12 +2,12 @@
 //! 职责：加载配置 → 构建共享状态 → 启动定时任务循环 → 并行拉起 voice-serve
 //! （语音链路独立进程）→ 启动 HTTP API。退出时终止子进程，UI 关闭即后端终止。
 
-use star_core::agents;
-use star_core::config::{self, Config, DEFAULT_CORE_PORT};
-use star_core::events::Event;
-use star_core::http;
-use star_core::scheduler::Scheduler;
-use star_core::state::CoreState;
+use ava_core::agents;
+use ava_core::config::{self, Config, DEFAULT_CORE_PORT};
+use ava_core::events::Event;
+use ava_core::http;
+use ava_core::scheduler::Scheduler;
+use ava_core::state::CoreState;
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Arc;
@@ -101,7 +101,7 @@ async fn async_main() -> anyhow::Result<()> {
 
     // 内嵌向量模型：优先使用安装包内随附的 EmbeddingGemma 缓存，首次搜索无需联网下载。
     // 模型以 HuggingFace 缓存目录结构放在 resources/models/aggrsearch-models 下。
-    let bundled_embed = star_core::paths::project_root().join("resources/models/aggrsearch-models");
+    let bundled_embed = ava_core::paths::project_root().join("resources/models/aggrsearch-models");
     if bundled_embed.is_dir() && std::env::var_os("AGGRSEARCH_EMBED_CACHE").is_none() {
         std::env::set_var("AGGRSEARCH_EMBED_CACHE", &bundled_embed);
     }
@@ -124,7 +124,7 @@ async fn async_main() -> anyhow::Result<()> {
     // 技能目录 = 用户配置目录 + 内置技能目录（随 App 分发的 <项目根>/Skills）。
     // 内置目录始终参与扫描，保证随包分发的技能开箱可用；用户仍可在设置/UI 里禁用或导入外部技能。
     let mut skill_dirs = config.skill_dirs.clone();
-    let builtin_skills = star_core::paths::project_root().join("Skills");
+    let builtin_skills = ava_core::paths::project_root().join("Skills");
     if !skill_dirs.iter().any(|d| d == &builtin_skills) {
         skill_dirs.push(builtin_skills);
     }
@@ -171,7 +171,7 @@ async fn async_main() -> anyhow::Result<()> {
                     id,
                     title: String::new(),
                 });
-                let _ = star_core::agents::run_main_turn(core2.clone(), prompt, None, false).await;
+                let _ = ava_core::agents::run_main_turn(core2.clone(), prompt, None, false).await;
             }
         });
     }
@@ -224,7 +224,7 @@ async fn async_main() -> anyhow::Result<()> {
                 .env("KWS_THRESHOLD", config.kws_threshold.to_string())
                 .env(
                     "AVA_ROOT",
-                    star_core::paths::project_root()
+                    ava_core::paths::project_root()
                         .to_string_lossy()
                         .into_owned(),
                 )
@@ -302,7 +302,7 @@ async fn async_main() -> anyhow::Result<()> {
                     tracing::warn!("MCP「{}」启动连接失败: {:?}", s.name, st.error);
                 }
             }
-            core_mcp.emit(star_core::events::Event::McpUpdated);
+            core_mcp.emit(ava_core::events::Event::McpUpdated);
         });
     }
 
@@ -361,7 +361,7 @@ fn resolve_voice_bin(explicit: Option<PathBuf>) -> Option<PathBuf> {
             }
         }
     }
-    let root = star_core::paths::project_root();
+    let root = ava_core::paths::project_root();
     for profile in ["debug", "release"] {
         let p = root.join("target").join(profile).join("voice-serve");
         if p.exists() {
