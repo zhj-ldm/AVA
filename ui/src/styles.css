@@ -82,11 +82,11 @@ svg { flex: none; }
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 10px; user-select: none;
 }
-/* 品牌标识：与对话里 AI 头像一致（星联三角洲徽标） */
+/* 品牌标识：与对话里 AI 头像一致（AVA 字母徽标） */
 .brand-mark {
   width: 26px; height: 26px; border-radius: 50%;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%230b2f4a' stroke='%236bb7ff' stroke-width='1.4'/%3E%3Cpath d='M12 5.4l5.3 12.2-5.3-3.2-5.3 3.2z' fill='%239fd8ff'/%3E%3C/svg%3E") center/contain no-repeat;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%230b2f4a' stroke='%236bb7ff' stroke-width='1.4'/%3E%3Cpath fill-rule='evenodd' d='M12 6.1l5.1 11.8h-2.6l-1-2.5H8.5l-1 2.5H5l5.1-11.8H12zm-2.3 7.1h4.6L12 9.6l-2.3 3.6z' fill='%239fd8ff'/%3E%3C/svg%3E") center/contain no-repeat;
   box-shadow: 0 0 0 1px rgba(107, 183, 255, .3), 0 0 10px rgba(107, 183, 255, .16);
 }
 .brand-name { font-size: 11.5px; font-weight: 800; letter-spacing: 1.4px; color: var(--text); white-space: nowrap; }
@@ -449,13 +449,13 @@ body.is-resizing { cursor: col-resize; }
 @keyframes msg-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .msg.user { align-self: flex-end; align-items: flex-end; }
 .msg.assistant { align-self: flex-start; align-items: stretch; position: relative; padding-left: 36px; }
-/* AI 头像：星联三角洲徽标，历史/实时/占位三种路径统一由伪元素渲染 */
+/* AI 头像：AVA 字母徽标，历史/实时/占位三种路径统一由伪元素渲染 */
 .msg.assistant::before {
   content: '';
   position: absolute; left: 0; top: 2px; width: 26px; height: 26px;
   border-radius: 50%;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%230b2f4a' stroke='%236bb7ff' stroke-width='1.4'/%3E%3Cpath d='M12 5.4l5.3 12.2-5.3-3.2-5.3 3.2z' fill='%239fd8ff'/%3E%3C/svg%3E") center/contain no-repeat;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%230b2f4a' stroke='%236bb7ff' stroke-width='1.4'/%3E%3Cpath fill-rule='evenodd' d='M12 6.1l5.1 11.8h-2.6l-1-2.5H8.5l-1 2.5H5l5.1-11.8H12zm-2.3 7.1h4.6L12 9.6l-2.3 3.6z' fill='%239fd8ff'/%3E%3C/svg%3E") center/contain no-repeat;
   box-shadow: 0 0 0 1px rgba(107, 183, 255, .3), 0 0 10px rgba(107, 183, 255, .16);
   pointer-events: none;
 }
